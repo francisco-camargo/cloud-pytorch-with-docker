@@ -1,4 +1,4 @@
-# Local PyTorch with Docker
+# Cloud PyTorch with Docker
 
 ## High-Level Architecture
 
