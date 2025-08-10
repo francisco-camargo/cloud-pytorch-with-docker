@@ -1,55 +1,127 @@
-# Local PyTorch with Docker
+# Cloud PyTorch with Docker
 
-## High-Level Architecture
 
-**Container-First Development**: Everything runs inside Docker with CPU optimization, VSCode connects remotely via Dev Containers extension.
+## **Set up AWS**
 
-## Project Structure (Minimal)
+### **AWS CLI**
+In your local machine install AWS CLI, my [guide](https://github.com/francisco-camargo/francisco-camargo/blob/master/src/aws/aws_cli/README.md).
 
-```
-pytorch-project/
-├── .devcontainer/           # VSCode dev container config
-├── Dockerfile              # Single stage, Ubuntu base + uv + CPU PyTorch
-├── pyproject.toml          # uv project file with CPU PyTorch + essentials
-├── src/                    # Your Python code
-└── scripts/train.py        # Simple training script
+Verify with
+```bash
+aws --version
 ```
 
-## Container Strategy
+### **IAM Identity Center**
 
-**Single Dockerfile approach**:
+#### Step 1: Complete Identity Center Setup
 
-- Start with Ubuntu base image (no CUDA needed)
-- Install uv inside container
-- Copy pyproject.toml and install CPU PyTorch with `uv sync`
-- Optimize for CPU performance (OpenMP, MKL)
-- Set up proper Python path and working directory
-- No volume mounts for dependencies (everything baked in)
+1. **Enable IAM Identity Center** in your AWS Console
+2. **Choose your identity source** - for a personal account, select "Identity Center directory"
+3. **Complete any remaining setup steps** AWS shows you
 
-**What it does:**
+#### Step 2: Create Your User
 
-- Uses Python 3.11 base image (has Python already)
-- Installs uv
-- Copies your pyproject.toml
-- Installs dependencies with uv
-- Keeps container running so VSCode can connect
+1. **In Identity Center, go to "Users"** in the left sidebar
+2. **Click "Add user"**
+3. **Fill in your details**:
+- Username (your choice)
+- Email address
+- First/Last name
+- Set a password or have AWS generate one
+4. **Create the user**
 
-**What you need:**
+#### Step 3: Create a Permission Set
 
-1. Dockerfile
-2. `pyproject.toml` with just PyTorch CPU
-3. `docker build -t pytorch-cpu .`
-4. `docker run -d pytorch-cpu`
-5. Sanity check by running
+1. **Go to "Permission sets"** in the left sidebar
+2. **Click "Create permission set"**
+3. **Select permission set type** select "Custom permission set"
+4. **Add inline policy**:
+    - In the "Permissions" section, locate "Inline policy"
+    - Click "Add inline policy"
+    - Switch to JSON editor and paste (_you must remove the comments_):
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ec2:*",             // For managing EC2 instances
+            "elasticloadbalancing:*",  // For potential load balancing
+            "iam:CreateServiceLinkedRole",  // For EC2 service roles
+            "iam:PassRole",      // For assigning roles to EC2
+            "s3:*"              // For OpenTofu state storage
+          ],
+          "Resource": "*"
+        }
+      ]
+    }
+    ```
+    This permission set provides:
+    - Full EC2 management for PyTorch containers
+    - S3 access for OpenTofu state files
+    - Minimum IAM permissions for EC2 operation
+    - Load balancing capabilities if needed
+5. **Configure the permission set**:
+- Name: `EC2-OpenTofu-Access`
+- Description: "Permissions for EC2 management and OpenTofu infrastructure deployment"
+6. **Complete the creation** and proceed to Step 4 for assignment
 
-   ```bash
-   docker exec -it <container_id> uv run python -c "import torch; print('PyTorch version:', torch.__version__); x = torch.tensor([1, 2, 3]); print('Tensor:', x); print('Sum:', x.sum().item())"
-   ```
+#### Step 4: Assign User to Account
 
-   replace <container_id> with your container ID which you can find by running `docker ps`
-6. Stop the container with, `docker stop <container_id>`. Or find the ID dynamically with `docker stop $(docker ps -q --filter ancestor=pytorch-cpu)`
+1. **Go to "AWS accounts"** in the left sidebar
+2. **Select your AWS account**
+3. **Click "Assign users or groups"**
+4. **Select your user** and the **permission set** you created
+5. **Finish the assignment**
 
-Note: This simple setup has no user management, no optimizations, no verification - just the absolute minimum to get PyTorch running in a container that VSCode can connect to.
+#### Step 5: Get Your SSO Information
+
+In Identity Center, find:
+- **AWS access portal URL** (something like `https://d-xxxxxxxxxx.awsapps.com/start`)
+- **SSO region** (where Identity Center is enabled)
+
+#### Step 6: Configure AWS CLI
+
+Now run:
+```bash
+aws configure sso
+```
+
+You'll be prompted for:
+- **SSO session name**: Pick any name (like "personal" or "main")
+- **SSO start URL**: Use the access portal URL from step 5
+- **SSO region**: The region where Identity Center is set up
+- **SSO registration scopes**: Enter `sso:account:access` (this is the default and minimum required scope)
+- **Default client region**: Your preferred AWS region for resources
+- **Default output format**: `json` (recommended)
+
+The CLI will open a browser for you to authenticate.
+
+#### Step 7: Test It
+
+```bash
+aws sso login --profile <sso profile>
+```
+
+Even if I granted STS permissions in the json above, I was not able to get the following to work even after successful SSO CLI login
+```bash
+aws sts get-caller-identity --profile <sso profile>
+```
+
+- Create or use existing Access Key ID and Secret Access Key
+
+## **Continue from here**
+
+e. **Create Provider Configuration**
+Create a new file `provider.tf`:
+``hcl provider "aws" { region = "us-east-1"  # or your preferred region } ``
+
+f. **Generate SSH Key Pair**
+``bash aws ec2 create-key-pair --key-name pytorch-key --query 'KeyMaterial' --output text > pytorch-key.pem ``
+
+g. **Set Key Permissions** (Windows)
+``powershell icacls pytorch-key.pem /inheritance:r icacls pytorch-key.pem /grant:r "%USERNAME%":"(R)" ``
 
 ## OpenTofu Infrastructure-as-Code
 
@@ -58,140 +130,17 @@ OpenTofu roadmap to get an EC2 instance running:
 ### Phase 1: Local Setup
 
 1. **Install OpenTofu** on your Windows machine
-   [Guide](https://opentofu.org/docs/intro/install/windows/). Not sure if adding it to PATH helped or not
+[Guide](https://opentofu.org/docs/intro/install/windows/). Not sure if adding it to PATH helped or not
 
-   ```powershell
-   winget install --exact --id=OpenTofu.Tofu
-   ```
+```powershell
+winget install --exact --id=OpenTofu.Tofu
+```
 
-   restart the terminal, then it should run in bash and powershell.
+restart the terminal, then it should run in bash and powershell.
 
-   ```bash
-   tofu -version
-   ```
-
-2. **AWS CLI**
-
-    a. Install AWS CLI, my [guide](https://github.com/francisco-camargo/francisco-camargo/blob/master/src/aws/aws_cli/README.md).
-
-    - Verify with
-
-    ```bash
-    aws --version
-    ```
-
-    b. **AWS IAM Identity Center**
-    Great choice! IAM Identity Center is more secure and is AWS's preferred approach. Let's walk through setting it up step by step:
-
-    ## Step 1: Complete Identity Center Setup
-
-    1. **Enable IAM Identity Center** in your AWS Console
-    2. **Choose your identity source** - for a personal account, select "Identity Center directory"
-    3. **Complete any remaining setup steps** AWS shows you
-
-    ## Step 2: Create Your User
-
-    1. **In Identity Center, go to "Users"** in the left sidebar
-    2. **Click "Add user"**
-    3. **Fill in your details**:
-    - Username (your choice)
-    - Email address
-    - First/Last name
-    - Set a password or have AWS generate one
-    4. **Create the user**
-
-    ## Step 3: Create a Permission Set
-
-    1. **Go to "Permission sets"** in the left sidebar
-    2. **Click "Create permission set"**
-    3. **Select permission set type** select "Custom permission set"
-    4. **Add inline policy**:
-       - In the "Permissions" section, locate "Inline policy"
-       - Click "Add inline policy"
-       - Switch to JSON editor and paste (_you must remove the comments_):
-       ```json
-       {
-         "Version": "2012-10-17",
-         "Statement": [
-           {
-             "Effect": "Allow",
-             "Action": [
-               "ec2:*",             // For managing EC2 instances
-               "elasticloadbalancing:*",  // For potential load balancing
-               "iam:CreateServiceLinkedRole",  // For EC2 service roles
-               "iam:PassRole",      // For assigning roles to EC2
-               "s3:*"              // For OpenTofu state storage
-             ],
-             "Resource": "*"
-           }
-         ]
-       }
-       ```
-       This permission set provides:
-       - Full EC2 management for PyTorch containers
-       - S3 access for OpenTofu state files
-       - Minimum IAM permissions for EC2 operation
-       - Load balancing capabilities if needed
-    5. **Configure the permission set**:
-    - Name: `EC2-OpenTofu-Access`
-    - Description: "Permissions for EC2 management and OpenTofu infrastructure deployment"
-    6. **Complete the creation** and proceed to Step 4 for assignment
-
-    ## Step 4: Assign User to Account
-
-    1. **Go to "AWS accounts"** in the left sidebar
-    2. **Select your AWS account**
-    3. **Click "Assign users or groups"**
-    4. **Select your user** and the **permission set** you created
-    5. **Finish the assignment**
-
-    ## Step 5: Get Your SSO Information
-
-    In Identity Center, find:
-    - **AWS access portal URL** (something like `https://d-xxxxxxxxxx.awsapps.com/start`)
-    - **SSO region** (where Identity Center is enabled)
-
-    ## Step 6: Configure AWS CLI
-
-    Now run:
-    ```bash
-    aws configure sso
-    ```
-
-    You'll be prompted for:
-    - **SSO session name**: Pick any name (like "personal" or "main")
-    - **SSO start URL**: Use the access portal URL from step 5
-    - **SSO region**: The region where Identity Center is set up
-    - **SSO registration scopes**: Enter `sso:account:access` (this is the default and minimum required scope)
-    - **Default client region**: Your preferred AWS region for resources
-    - **Default output format**: `json` (recommended)
-
-    The CLI will open a browser for you to authenticate.
-
-    ## Step 7: Test It
-
-    ```bash
-    aws sso login --profile <sso profile>
-    ```
-
-    Even if I granted STS permissions in the json above, I was not able to get the following to work even after successful SSO CLI login
-    ```bash
-    aws sts get-caller-identity --profile <sso profile>
-    ```
-
-   - Create or use existing Access Key ID and Secret Access Key
-
-    **Continue from here**
-
-   e. **Create Provider Configuration**
-   Create a new file `provider.tf`:
-   ``hcl provider "aws" { region = "us-east-1"  # or your preferred region } ``
-
-   f. **Generate SSH Key Pair**
-   ``bash aws ec2 create-key-pair --key-name pytorch-key --query 'KeyMaterial' --output text > pytorch-key.pem ``
-
-   g. **Set Key Permissions** (Windows)
-   ``powershell icacls pytorch-key.pem /inheritance:r icacls pytorch-key.pem /grant:r "%USERNAME%":"(R)" ``
+```bash
+tofu -version
+```
 
 ### Phase 2: Infrastructure Definition
 
