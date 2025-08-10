@@ -111,17 +111,24 @@ aws sts get-caller-identity --profile <sso profile>
 
 - Create or use existing Access Key ID and Secret Access Key
 
-## **Continue from here**
+### **SSH Credentials**
 
-e. **Create Provider Configuration**
-Create a new file `provider.tf`:
-``hcl provider "aws" { region = "us-east-1"  # or your preferred region } ``
+Now that AWS authentication is configured, we need to prepare the SSH credentials that will allow us to securely connect to EC2 instances we'll create later. These steps create and secure the SSH key pair that OpenTofu will use when provisioning EC2 instances.
 
-f. **Generate SSH Key Pair**
-``bash aws ec2 create-key-pair --key-name pytorch-key --query 'KeyMaterial' --output text > pytorch-key.pem ``
+#### **Generate SSH Key Pair**
 
-g. **Set Key Permissions** (Windows)
-``powershell icacls pytorch-key.pem /inheritance:r icacls pytorch-key.pem /grant:r "%USERNAME%":"(R)" ``
+This creates an AWS-managed SSH key pair and downloads the private key file locally. You'll need this to SSH into any EC2 instances created by OpenTofu.
+```bash
+aws ec2 create-key-pair --key-name pytorch-key --query 'KeyMaterial' --output text > pytorch-key.pem
+```
+
+#### **Set Key Permissions** (Windows)
+
+This secures the private key file with proper permissions - only your user account can read it. This is required for SSH clients to accept the key.
+```powershell
+icacls pytorch-key.pem /inheritance:r
+icacls pytorch-key.pem /grant:r "%USERNAME%":"(R)"
+```
 
 ## OpenTofu Infrastructure-as-Code
 
@@ -142,32 +149,40 @@ restart the terminal, then it should run in bash and powershell.
 tofu -version
 ```
 
+2. **Create Provider Configuration**
+Create a new file `provider.tf`:
+```hcl
+provider "aws" {
+  region = "us-east-1"  # or your preferred region
+}
+```
+
 ### Phase 2: Infrastructure Definition
 
-4. **Create main.tf** - define EC2 instance, security group, key pair
-5. **Create variables.tf** - parameterize instance type, region, etc.
-6. **Create outputs.tf** - export instance IP, connection details
-7. **Create terraform.tfvars** - set your specific values
+3. **Create main.tf** - define EC2 instance, security group, key pair
+4. **Create variables.tf** - parameterize instance type, region, etc.
+5. **Create outputs.tf** - export instance IP, connection details
+6. **Create terraform.tfvars** - set your specific values
 
 ### Phase 3: AWS Prerequisites
 
-8. **Generate SSH key pair** for connecting to instance
-9. **Verify AWS credentials** have EC2 permissions
-10. **Choose AWS region** and availability zone
+7. **Generate SSH key pair** for connecting to instance
+8. **Verify AWS credentials** have EC2 permissions
+9. **Choose AWS region** and availability zone
 
 ### Phase 4: Deployment
 
-11. **Initialize OpenTofu** (`tofu init`)
-12. **Plan deployment** (`tofu plan`) - preview what will be created
-13. **Apply configuration** (`tofu apply`) - create actual resources
-14. **Test SSH connection** to your new instance
+10. **Initialize OpenTofu** (`tofu init`)
+11. **Plan deployment** (`tofu plan`) - preview what will be created
+12. **Apply configuration** (`tofu apply`) - create actual resources
+13. **Test SSH connection** to your new instance
 
 ### Phase 5: Setup Development Environment
 
-15. **SSH into instance** and install Docker
-16. **Clone your PyTorch repo** on the instance
-17. **Configure VSCode SSH** to connect to the instance
-18. **Test your container** runs on the cloud instance
+14. **SSH into instance** and install Docker
+15. **Clone your PyTorch repo** on the instance
+16. **Configure VSCode SSH** to connect to the instance
+17. **Test your container** runs on the cloud instance
 
 ## VSCode Integration
 
