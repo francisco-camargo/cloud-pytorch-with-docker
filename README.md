@@ -159,30 +159,30 @@ provider "aws" {
 
 ### Phase 2: Infrastructure Definition
 
-4. **Create main.tf** - define EC2 instance, security group, key pair
-5. **Create variables.tf** - parameterize instance type, region, etc.
-6. **Create outputs.tf** - export instance IP, connection details
-7. **Create terraform.tfvars** - set your specific values
+3. **Create main.tf** - define EC2 instance, security group, key pair
+4. **Create variables.tf** - parameterize instance type, region, etc.
+5. **Create outputs.tf** - export instance IP, connection details
+6. **Create terraform.tfvars** - set your specific values
 
 ### Phase 3: AWS Prerequisites
 
-8. **Generate SSH key pair** for connecting to instance
-9. **Verify AWS credentials** have EC2 permissions
-10. **Choose AWS region** and availability zone
+7. **Generate SSH key pair** for connecting to instance
+8. **Verify AWS credentials** have EC2 permissions
+9. **Choose AWS region** and availability zone
 
 ### Phase 4: Deployment
 
-11. **Initialize OpenTofu** (`tofu init`)
-12. **Plan deployment** (`tofu plan`) - preview what will be created
-13. **Apply configuration** (`tofu apply`) - create actual resources
-14. **Test SSH connection** to your new instance
+10. **Initialize OpenTofu** (`tofu init`)
+11. **Plan deployment** (`tofu plan`) - preview what will be created
+12. **Apply configuration** (`tofu apply`) - create actual resources
+13. **Test SSH connection** to your new instance
 
 ### Phase 5: Setup Development Environment
 
-15. **SSH into instance** and install Docker
-16. **Clone your PyTorch repo** on the instance
-17. **Configure VSCode SSH** to connect to the instance
-18. **Test your container** runs on the cloud instance
+14. **SSH into instance** and install Docker
+15. **Clone your PyTorch repo** on the instance
+16. **Configure VSCode SSH** to connect to the instance
+17. **Test your container** runs on the cloud instance
 
 ## VSCode Integration
 
