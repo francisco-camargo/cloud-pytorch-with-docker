@@ -1,188 +1,131 @@
 # Cloud PyTorch with Docker
 
+## Cloud Deployment with OpenTofu
 
-## **Set up AWS**
+For deploying PyTorch Docker containers to AWS EC2 instances, follow these milestones:
 
-### **AWS CLI**
-In your local machine install AWS CLI, my [guide](https://github.com/francisco-camargo/francisco-camargo/blob/master/src/aws/aws_cli/README.md).
+### Milestone 1: Local Container Preparation
 
-Verify with
-```bash
-aws --version
-```
+**Objective**: Ensure your PyTorch container works locally and is ready for cloud deployment
 
-### **IAM Identity Center**
+- [ ] **Build and test Docker container locally**
+  ```bash
+  docker build -t pytorch-app .
+  docker run --rm -v $(pwd):/workspace pytorch-app python train_mnist.py
+  ```
+- [ ] **Verify training script works** (e.g., `train_mnist.py` completes successfully)
+- [ ] **Optimize container for cloud** (minimal layers, efficient caching)
+- [ ] **Push to container registry** (ECR, Docker Hub, or private registry)
+  ```bash
+  docker tag pytorch-app:latest your-registry/pytorch-app:latest
+  docker push your-registry/pytorch-app:latest
+  ```
 
-#### Step 1: Complete Identity Center Setup
+### Milestone 2: Infrastructure Foundation
 
-1. **Enable IAM Identity Center** in your AWS Console
-2. **Choose your identity source** - for a personal account, select "Identity Center directory"
-3. **Complete any remaining setup steps** AWS shows you
+**Objective**: Set up the basic AWS infrastructure to run containers
 
-#### Step 2: Create Your User
+- [ ] **Configure OpenTofu provider** (`provider.tf`)
+- [ ] **Create VPC and networking** (subnets, security groups, internet gateway)
+- [ ] **Set up EC2 key pair** for SSH access
+- [ ] **Define security group rules** (SSH port 22, any application ports needed)
+- [ ] **Create IAM roles** for EC2 instance (if needed for AWS services access)
 
-1. **In Identity Center, go to "Users"** in the left sidebar
-2. **Click "Add user"**
-3. **Fill in your details**:
-- Username (your choice)
-- Email address
-- First/Last name
-- Set a password or have AWS generate one
-4. **Create the user**
+### Milestone 3: EC2 Instance Configuration
 
-#### Step 3: Create a Permission Set
+**Objective**: Provision and configure EC2 instance for Docker workloads
 
-1. **Go to "Permission sets"** in the left sidebar
-2. **Click "Create permission set"**
-3. **Select permission set type** select "Custom permission set"
-4. **Add inline policy**:
-    - In the "Permissions" section, locate "Inline policy"
-    - Click "Add inline policy"
-    - Switch to JSON editor and paste (_you must remove the comments_):
-    ```json
-    {
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Action": [
-            "ec2:*",             // For managing EC2 instances
-            "elasticloadbalancing:*",  // For potential load balancing
-            "iam:CreateServiceLinkedRole",  // For EC2 service roles
-            "iam:PassRole",      // For assigning roles to EC2
-            "s3:*"              // For OpenTofu state storage
-          ],
-          "Resource": "*"
-        }
-      ]
-    }
-    ```
-    This permission set provides:
-    - Full EC2 management for PyTorch containers
-    - S3 access for OpenTofu state files
-    - Minimum IAM permissions for EC2 operation
-    - Load balancing capabilities if needed
-5. **Configure the permission set**:
-- Name: `EC2-OpenTofu-Access`
-- Description: "Permissions for EC2 management and OpenTofu infrastructure deployment"
-6. **Complete the creation** and proceed to Step 4 for assignment
+- [ ] **Define EC2 instance resource** in OpenTofu
+    - **GPU Instance types**: `p3.2xlarge`, `p3.8xlarge`, `g4dn.xlarge`, `g5.xlarge` (for PyTorch GPU training)
+    - **AMI selection**: Deep Learning AMI (Ubuntu) with NVIDIA drivers and Docker pre-installed
+    - **Storage configuration**: EBS GP3 volumes (>=100GB for models/data)
+- [ ] **Configure user data script** for instance initialization
 
-#### Step 4: Assign User to Account
+  ```bash
+  #!/bin/bash
+  # Install NVIDIA Container Toolkit (if not in DL AMI)
+  # Pull your PyTorch GPU container image
+  # Set up data directories and permissions
+  ```
+- [ ] **Apply OpenTofu configuration**
+  ```bash
+  tofu init
+  tofu plan
+  tofu apply
+  ```
 
-1. **Go to "AWS accounts"** in the left sidebar
-2. **Select your AWS account**
-3. **Click "Assign users or groups"**
-4. **Select your user** and the **permission set** you created
-5. **Finish the assignment**
+### Milestone 4: Container Runtime Setup
 
-#### Step 5: Get Your SSO Information
+**Objective**: Get Docker running and accessible on the EC2 instance
 
-In Identity Center, find:
-- **AWS access portal URL** (something like `https://d-xxxxxxxxxx.awsapps.com/start`)
-- **SSO region** (where Identity Center is enabled)
+- [ ] **SSH into EC2 instance** and verify Docker installation
+  ```bash
+  ssh -i pytorch-key.pem ec2-user@<instance-ip>
+  docker --version
+  ```
+- [ ] **Pull your PyTorch container image**
+  ```bash
+  docker pull your-registry/pytorch-app:latest
+  ```
+- [ ] **Test container execution**
+  ```bash
+  docker run --rm your-registry/pytorch-app:latest python --version
+  ```
+- [ ] **Set up data persistence** (mount EBS volumes, configure data directories)
 
-#### Step 6: Configure AWS CLI
+### Milestone 5: Training Pipeline Deployment
 
-Now run:
-```bash
-aws configure sso
-```
+**Objective**: Successfully run PyTorch training workloads in the cloud
 
-You'll be prompted for:
-- **SSO session name**: Pick any name (like "personal" or "main")
-- **SSO start URL**: Use the access portal URL from step 5
-- **SSO region**: The region where Identity Center is set up
-- **SSO registration scopes**: Enter `sso:account:access` (this is the default and minimum required scope)
-- **Default client region**: Your preferred AWS region for resources
-- **Default output format**: `json` (recommended)
+- [ ] **Upload training data** to EC2 instance or S3
+- [ ] **Run training script in container**
+  ```bash
+  docker run -v /data:/workspace/data your-registry/pytorch-app:latest python train_mnist.py
+  ```
+- [ ] **Verify model training completes** and outputs are saved
+- [ ] **Monitor resource usage** (CPU, memory, disk I/O)
+- [ ] **Set up logging/monitoring** (CloudWatch, container logs)
 
-The CLI will open a browser for you to authenticate.
+### Milestone 6: Production Readiness
 
-#### Step 7: Test It
+**Objective**: Make the deployment robust and scalable
 
-```bash
-aws sso login --profile <sso profile>
-```
+- [ ] **Implement container restart policies** (auto-restart on failure)
+- [ ] **Set up automated deployments** (CI/CD pipeline for container updates)
+- [ ] **Configure backup strategies** (model checkpoints, data backup)
+- [ ] **Implement monitoring and alerting** (training progress, system health)
+- [ ] **Document deployment procedures** and troubleshooting guides
+- [ ] **Test disaster recovery** (instance replacement, data recovery)
 
-Even if I granted STS permissions in the json above, I was not able to get the following to work even after successful SSO CLI login
-```bash
-aws sts get-caller-identity --profile <sso profile>
-```
+### Quick Start Commands
 
-- Create or use existing Access Key ID and Secret Access Key
-
-### **SSH Credentials**
-
-Now that AWS authentication is configured, we need to prepare the SSH credentials that will allow us to securely connect to EC2 instances we'll create later. These steps create and secure the SSH key pair that OpenTofu will use when provisioning EC2 instances.
-
-#### **Generate SSH Key Pair**
-
-This creates an AWS-managed SSH key pair and downloads the private key file locally. You'll need this to SSH into any EC2 instances created by OpenTofu.
-```bash
-aws ec2 create-key-pair --key-name pytorch-key --query 'KeyMaterial' --output text > pytorch-key.pem
-```
-
-#### **Set Key Permissions** (Windows)
-
-This secures the private key file with proper permissions - only your user account can read it. This is required for SSH clients to accept the key.
-```powershell
-icacls pytorch-key.pem /inheritance:r
-icacls pytorch-key.pem /grant:r "%USERNAME%":"(R)"
-```
-
-## OpenTofu Infrastructure-as-Code
-
-OpenTofu roadmap to get an EC2 instance running:
-
-### Phase 1: Local Setup
-
-1. **Install OpenTofu** on your Windows machine
-[Guide](https://opentofu.org/docs/intro/install/windows/). Not sure if adding it to PATH helped or not
-
-```powershell
-winget install --exact --id=OpenTofu.Tofu
-```
-
-restart the terminal, then it should run in bash and powershell.
+Once infrastructure is ready:
 
 ```bash
-tofu -version
+# Connect to instance
+ssh -i pytorch-key.pem ec2-user@<instance-ip>
+
+# Run training (with GPU support)
+docker run -d --name pytorch-training \
+  --gpus all \
+  -v /data:/workspace/data \
+  -v /models:/workspace/models \
+  your-registry/pytorch-app:latest python train_mnist.py
+
+# Monitor progress
+docker logs -f pytorch-training
+
+# Copy results back
+scp -i pytorch-key.pem ec2-user@<instance-ip>:/models/* ./local-models/
 ```
 
-2. **Create Provider Configuration**
-Create a new file `provider.tf`:
-```hcl
-provider "aws" {
-  region = "us-east-1"  # or your preferred region
-}
-```
+### Cost Optimization Tips
 
-### Phase 2: Infrastructure Definition
-
-3. **Create main.tf** - define EC2 instance, security group, key pair
-4. **Create variables.tf** - parameterize instance type, region, etc.
-5. **Create outputs.tf** - export instance IP, connection details
-6. **Create terraform.tfvars** - set your specific values
-
-### Phase 3: AWS Prerequisites
-
-7. **Generate SSH key pair** for connecting to instance
-8. **Verify AWS credentials** have EC2 permissions
-9. **Choose AWS region** and availability zone
-
-### Phase 4: Deployment
-
-10. **Initialize OpenTofu** (`tofu init`)
-11. **Plan deployment** (`tofu plan`) - preview what will be created
-12. **Apply configuration** (`tofu apply`) - create actual resources
-13. **Test SSH connection** to your new instance
-
-### Phase 5: Setup Development Environment
-
-14. **SSH into instance** and install Docker
-15. **Clone your PyTorch repo** on the instance
-16. **Configure VSCode SSH** to connect to the instance
-17. **Test your container** runs on the cloud instance
+- Use **Spot Instances** for training workloads (60-90% cost savings)
+- **Stop instances** when not training (only pay for storage)
+- Use **appropriate instance types** (don't over-provision)
+- **Monitor usage** with AWS Cost Explorer
+- Consider **Batch or ECS** for large-scale training jobs
 
 ## VSCode Integration
 
