@@ -1,205 +1,150 @@
 # Cloud PyTorch with Docker
 
-## Cloud Deployment with OpenTofu
+## Minimal EC2 PyTorch Setup (Proof of Concept)
 
-For deploying PyTorch Docker containers to AWS EC2 instances, follow these milestones:
+**Goal**: Launch a single EC2 instance, run a PyTorch container, execute `train_mnist.py`. Nothing else.
 
-### Milestone 1: Local Container Preparation
-
-**Objective**: Ensure your PyTorch container works locally and is ready for cloud deployment
-
-- [ ] **Build and test Docker container locally**
-
-  ```bash
-  docker build -t pytorch-app .
-  docker run --rm -v $(pwd):/workspace pytorch-app python train_mnist.py
-  ```
-
-- [ ] **Verify training script works on CPU** (e.g., `train_mnist.py` with `device='cpu'`)
-
-    ```bash
-    # Run without GPU to verify CPU compatibility
-    docker run --rm -v $(pwd):/workspace pytorch-app python train_mnist.py --device cpu
-    ```
-
-- [ ] **Optimize container for cloud** (minimal layers, efficient caching)
-- [ ] **Push to container registry** (ECR, Docker Hub, or private registry)
-
-  ```bash
-  docker tag pytorch-app:latest your-registry/pytorch-app:latest
-  docker push your-registry/pytorch-app:latest
-  ```
-
-### Milestone 2: Infrastructure Foundation
-
-**Objective**: Set up the basic AWS infrastructure to run containers
-
-- [ ] **Configure OpenTofu provider** (`provider.tf`)
-- [ ] **Create VPC and networking** (subnets, security groups, internet gateway)
-- [ ] **Set up EC2 key pair** for SSH access
-- [ ] **Define security group rules** (SSH port 22, any application ports needed)
-- [ ] **Create IAM roles** for EC2 instance (if needed for AWS services access)
-
-### Milestone 3: EC2 Instance Configuration
-
-**Objective**: Provision and configure EC2 instance for Docker workloads
-
-- [ ] **Define EC2 instance resource** in OpenTofu
-    - **GPU Instance types**: `p3.2xlarge`, `p3.8xlarge`, `g4dn.xlarge`, `g5.xlarge` (for PyTorch GPU training)
-    - **AMI selection**: Deep Learning AMI (Ubuntu) with NVIDIA drivers and Docker pre-installed
-    - **Storage configuration**: EBS GP3 volumes (>=100GB for models/data)
-- [ ] **Configure user data script** for instance initialization
-
-  ```bash
-  #!/bin/bash
-  # Install NVIDIA Container Toolkit (if not in DL AMI)
-  # Pull your PyTorch GPU container image
-  # Set up data directories and permissions
-  ```
-- [ ] **Apply OpenTofu configuration**
-  ```bash
-  tofu init
-  tofu plan
-  tofu apply
-  ```
-
-### Milestone 4: Container Runtime Setup
-
-**Objective**: Get Docker running and accessible on the EC2 instance
-
-- [ ] **SSH into EC2 instance** and verify Docker installation
-  ```bash
-  ssh -i pytorch-key.pem ec2-user@<instance-ip>
-  docker --version
-  ```
-- [ ] **Pull your PyTorch container image**
-  ```bash
-  docker pull your-registry/pytorch-app:latest
-  ```
-- [ ] **Test container execution**
-  ```bash
-  docker run --rm your-registry/pytorch-app:latest python --version
-  ```
-- [ ] **Set up data persistence** (mount EBS volumes, configure data directories)
-
-### Milestone 5: Training Pipeline Deployment
-
-**Objective**: Successfully run PyTorch training workloads in the cloud
-
-- [ ] **Upload training data** to EC2 instance or S3
-- [ ] **Run training script in container**
-  ```bash
-  docker run -v /data:/workspace/data your-registry/pytorch-app:latest python train_mnist.py
-  ```
-- [ ] **Verify model training completes** and outputs are saved
-- [ ] **Monitor resource usage** (CPU, memory, disk I/O)
-- [ ] **Set up logging/monitoring** (CloudWatch, container logs)
-
-### Milestone 6: Production Readiness
-
-**Objective**: Make the deployment robust and scalable
-
-- [ ] **Implement container restart policies** (auto-restart on failure)
-- [ ] **Set up automated deployments** (CI/CD pipeline for container updates)
-- [ ] **Configure backup strategies** (model checkpoints, data backup)
-- [ ] **Implement monitoring and alerting** (training progress, system health)
-- [ ] **Document deployment procedures** and troubleshooting guides
-- [ ] **Test disaster recovery** (instance replacement, data recovery)
-
-### Quick Start Commands
-
-Once infrastructure is ready:
+### Step 1: Build Container Locally
 
 ```bash
-# Connect to instance
-ssh -i pytorch-key.pem ec2-user@<instance-ip>
-
-# Run training (with GPU support)
-docker run -d --name pytorch-training \
-  --gpus all \
-  -v /data:/workspace/data \
-  -v /models:/workspace/models \
-  your-registry/pytorch-app:latest python train_mnist.py
-
-# Monitor progress
-docker logs -f pytorch-training
-
-# Copy results back
-scp -i pytorch-key.pem ec2-user@<instance-ip>:/models/* ./local-models/
+docker build -t pytorch-app ./docker
+docker run --rm pytorch-app python train_mnist.py  # Test locally first
 ```
 
-### Cost Optimization Tips
+### Step 2: Create OpenTofu Configuration
 
-- Use **Spot Instances** for training workloads (60-90% cost savings)
-- **Stop instances** when not training (only pay for storage)
-- Use **appropriate instance types** (don't over-provision)
-- **Monitor usage** with AWS Cost Explorer
-- Consider **Batch or ECS** for large-scale training jobs
+**`provider.tf`**
 
-## VSCode Integration
+```hcl
+provider "aws" {
+  region = "us-east-1"
+}
+```
 
-**Dev Containers extension**:
+**`main.tf`**
 
-- `.devcontainer/devcontainer.json` configures the remote connection
-- VSCode attaches to running container
-- Full IntelliSense, debugging, terminal access inside container
-- Extensions (Python, PyTorch snippets) installed in container
+```hcl
+# Use default VPC (no custom networking needed)
+data "aws_vpc" "default" {
+  default = true
+}
 
-## Dependencies (Minimal Set)
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
 
-**CPU-optimized libraries**:
+# Security group: SSH only
+resource "aws_security_group" "pytorch" {
+  name_prefix = "pytorch-sg"
+  vpc_id      = data.aws_vpc.default.id
 
-- PyTorch CPU version + torchvision
-- numpy (with optimized BLAS)
-- matplotlib (basics)
-- tqdm (progress bars)
-- tensorboard (simple logging)
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]  # Restrict this in production
+  }
 
-**No Jupyter, no GPU libraries, no heavyweight frameworks initially**
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
 
-## Development Workflow
+# EC2 instance
+resource "aws_instance" "pytorch" {
+  ami           = "ami-0c02fb55956c7d316"  # Amazon Linux 2 (us-east-1)
+  instance_type = "t3.medium"              # Cheap for testing, upgrade to g4dn.xlarge for GPU
 
-1. **Build container** with all dependencies pre-installed
-2. **Start container** (standard Docker, no GPU runtime needed)
-3. **VSCode connects** via Dev Containers extension
-4. **Code directly** in container environment
-5. **Run training** with simple `python scripts/train.py`
+  subnet_id                   = data.aws_subnets.default.ids[0]
+  vpc_security_group_ids      = [aws_security_group.pytorch.id]
+  associate_public_ip_address = true
 
-## CPU Optimization
+  key_name = "pytorch-key"  # Create this key pair manually in AWS console
 
-**Docker Configuration**:
+  user_data = <<-EOF
+    #!/bin/bash
+    yum update -y
+    yum install -y docker
+    systemctl start docker
+    systemctl enable docker
+    usermod -a -G docker ec2-user
 
-- Standard Docker Desktop on Windows
-- CPU resource allocation (cores/memory)
-- No special runtime requirements
-- Faster startup than GPU containers
+    # Pull and run your container
+    docker pull pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
+  EOF
 
-## Minimal Neural Network
+  tags = {
+    Name = "pytorch-dev"
+  }
+}
 
-**Simple CNN example**:
+output "instance_ip" {
+  value = aws_instance.pytorch.public_ip
+}
+```
 
-- Basic PyTorch model (lightweight for CPU)
-- MNIST dataset (smaller, faster on CPU)
-- Reduced batch sizes for CPU efficiency
-- CPU utilization monitoring
-- Threading optimization for Windows containers
+### Step 3: Deploy
 
-## Windows-Specific Considerations
+```bash
+cd terraform/
+tofu init
+tofu apply
+```
 
-**Docker Desktop**:
+### Step 4: Connect and Run
 
-- WSL2 backend recommended
-- Memory allocation for container
-- File system performance (avoid bind mounts for dependencies)
-- Port forwarding for any web interfaces
+```bash
+# SSH into instance
+ssh -i pytorch-key.pem ec2-user@<instance-ip>
 
-This approach gives you:
+# Run your PyTorch code
+docker run --rm -v /tmp:/workspace \
+  pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime \
+  python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+```
 
-- **No GPU dependencies** (works on any Windows machine)
-- **Fast container startup** (no CUDA runtime)
-- **Full VSCode experience** with remote development
-- **CPU-optimized PyTorch** for reasonable performance
-- **Simple setup** on Windows Docker Desktop
-- **Reproducible environment** across any CPU-based machine
+**That's it.** Single EC2 instance, pre-built PyTorch image, minimal AWS services.
 
-The key advantage is simplicity - standard Docker setup with no special hardware requirements, while still maintaining professional development practices.
+## If You Want GPU (Optional)
+
+- Change instance type to `g4dn.xlarge`
+- Use Deep Learning AMI: `ami-0c94855ba95b798c7`
+- Add `--gpus all` to docker run command
+
+## Local Development
+
+For local development while iterating:
+
+### VSCode Integration
+
+```json
+// .devcontainer/devcontainer.json
+{
+  "image": "pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+}
+```
+
+### Dependencies (Minimal Set)
+
+Already included in PyTorch image:
+
+- PyTorch + torchvision
+- numpy
+- Basic Python ML stack
+
+Add only if needed:
+
+```bash
+pip install matplotlib tqdm tensorboard
+```
