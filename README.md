@@ -14,80 +14,54 @@ docker run --rm pytorch-app python train_mnist.py  # Test locally first
 ### Step 2: Create OpenTofu Configuration
 
 **`provider.tf`**
-
-```hcl
-provider "aws" {
-  region = "us-east-1"
-}
-```
+Configures the AWS provider to use the `us-east-1` region. This tells OpenTofu which cloud provider to use and where to create resources.
 
 **`main.tf`**
+Creates the minimal infrastructure needed:
 
-```hcl
-# Use default VPC (no custom networking needed)
-data "aws_vpc" "default" {
-  default = true
-}
+- **Data Sources**: Finds your default VPC and subnets (uses existing AWS networking instead of creating new ones)
+- **Security Group**: Creates firewall rules allowing SSH access (port 22) and all outbound traffic
+- **EC2 Instance**:
+    - Uses Amazon Linux 2 AMI for simplicity
+    - `t3.medium` instance type (cost-effective for testing)
+    - Automatically gets a public IP for easy access
+    - References the key pair `pytorch-key` (create this manually in AWS console)
+- **User Data Script**: Runs on instance startup to install Docker, start the service, and pre-pull the PyTorch container image
+- **Output**: Displays the instance's public IP address after creation
 
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
+### How Docker Containers Get onto EC2
 
-# Security group: SSH only
-resource "aws_security_group" "pytorch" {
-  name_prefix = "pytorch-sg"
-  vpc_id      = data.aws_vpc.default.id
+**There are two ways the PyTorch container can end up on your EC2 instance:**
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]  # Restrict this in production
-  }
+#### **Option 1: Automatic Pre-pull (via User Data) ← THIS PROJECT USES THIS**
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
+- When the EC2 instance starts up, the User Data script automatically runs
+- This script installs Docker and pulls the public PyTorch image from Docker Hub
+- Command: `docker pull pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime`
+- The container image is downloaded and cached on the instance
+- When you SSH in later, the image is already available locally
+- **Advantage**: Container is ready to run immediately when you connect
 
-# EC2 instance
-resource "aws_instance" "pytorch" {
-  ami           = "ami-0c02fb55956c7d316"  # Amazon Linux 2 (us-east-1)
-  instance_type = "t3.medium"              # Cheap for testing, upgrade to g4dn.xlarge for GPU
+#### **Option 2: Manual Pull (after SSH) ← Alternative approach**
 
-  subnet_id                   = data.aws_subnets.default.ids[0]
-  vpc_security_group_ids      = [aws_security_group.pytorch.id]
-  associate_public_ip_address = true
+- SSH into the instance after it's created
+- Manually run `docker pull pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime`
+- This downloads the image from Docker Hub to the instance
+- Takes a few minutes depending on image size and network speed
+- **Use this if**: User Data fails or you want different images
 
-  key_name = "pytorch-key"  # Create this key pair manually in AWS console
+**Why we use public images:**
 
-  user_data = <<-EOF
-    #!/bin/bash
-    yum update -y
-    yum install -y docker
-    systemctl start docker
-    systemctl enable docker
-    usermod -a -G docker ec2-user
+- No need to build custom images or push to registries
+- PyTorch official images are maintained and optimized
+- Simply reference them by name: `pytorch/pytorch:tag`
+- Docker automatically downloads from Docker Hub when needed
 
-    # Pull and run your container
-    docker pull pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime
-  EOF
+**If you want to use your custom container:**
 
-  tags = {
-    Name = "pytorch-dev"
-  }
-}
-
-output "instance_ip" {
-  value = aws_instance.pytorch.public_ip
-}
-```
+1. Build locally: `docker build -t my-pytorch-app .`
+2. Push to registry: `docker push your-registry/my-pytorch-app`
+3. Pull on EC2: `docker pull your-registry/my-pytorch-app`
 
 ### Step 3: Deploy
 
