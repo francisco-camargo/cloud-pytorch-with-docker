@@ -9,13 +9,22 @@ For deploying PyTorch Docker containers to AWS EC2 instances, follow these miles
 **Objective**: Ensure your PyTorch container works locally and is ready for cloud deployment
 
 - [ ] **Build and test Docker container locally**
+
   ```bash
   docker build -t pytorch-app .
   docker run --rm -v $(pwd):/workspace pytorch-app python train_mnist.py
   ```
-- [ ] **Verify training script works** (e.g., `train_mnist.py` completes successfully)
+
+- [ ] **Verify training script works on CPU** (e.g., `train_mnist.py` with `device='cpu'`)
+
+    ```bash
+    # Run without GPU to verify CPU compatibility
+    docker run --rm -v $(pwd):/workspace pytorch-app python train_mnist.py --device cpu
+    ```
+
 - [ ] **Optimize container for cloud** (minimal layers, efficient caching)
 - [ ] **Push to container registry** (ECR, Docker Hub, or private registry)
+
   ```bash
   docker tag pytorch-app:latest your-registry/pytorch-app:latest
   docker push your-registry/pytorch-app:latest
