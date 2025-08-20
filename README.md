@@ -1,253 +1,164 @@
 # Cloud PyTorch with Docker
 
+[Guide](https://github.com/francisco-camargo/opentofu-aws-hello-world) to getting started with AWS and OpenTofu to launch an EC2 instance.
 
-## **Set up AWS**
+## Minimal EC2 PyTorch Setup (Proof of Concept)
 
-### **AWS CLI**
-In your local machine install AWS CLI, my [guide](https://github.com/francisco-camargo/francisco-camargo/blob/master/src/aws/aws_cli/README.md).
+**Goal**: Launch a single EC2 instance, run a PyTorch container, execute `train_mnist.py`. Nothing else.
 
-Verify with
+### Step 1: Build Container Locally
+
 ```bash
-aws --version
+docker build -t pytorch-app ./docker
+docker run --rm pytorch-app python train_mnist.py  # Test locally first
 ```
 
-### **IAM Identity Center**
+### Step 2: Create OpenTofu Configuration
 
-#### Step 1: Complete Identity Center Setup
+**`provider.tf`**
+Configures the AWS provider to use the `us-east-1` region. This tells OpenTofu which cloud provider to use and where to create resources.
 
-1. **Enable IAM Identity Center** in your AWS Console
-2. **Choose your identity source** - for a personal account, select "Identity Center directory"
-3. **Complete any remaining setup steps** AWS shows you
+**`main.tf`**
+Creates the minimal infrastructure needed:
 
-#### Step 2: Create Your User
+- **Data Sources**: Finds your default VPC and subnets (uses existing AWS networking instead of creating new ones)
+- **Security Group**: Creates firewall rules allowing SSH access (port 22) and all outbound traffic
+- **EC2 Instance**:
+    - Uses Amazon Linux 2 AMI for simplicity
+    - `t3.medium` instance type (cost-effective for testing)
+    - Automatically gets a public IP for easy access
+    - References the key pair `pytorch-key` (create this manually in AWS console)
+- **User Data Script**: Runs on instance startup to install Docker, start the service, and pre-pull the PyTorch container image
+- **Output**: Displays the instance's public IP address after creation
 
-1. **In Identity Center, go to "Users"** in the left sidebar
-2. **Click "Add user"**
-3. **Fill in your details**:
-- Username (your choice)
-- Email address
-- First/Last name
-- Set a password or have AWS generate one
-4. **Create the user**
+**`subnet_id`**
 
-#### Step 3: Create a Permission Set
+To get your subnet ID run
 
-1. **Go to "Permission sets"** in the left sidebar
-2. **Click "Create permission set"**
-3. **Select permission set type** select "Custom permission set"
-4. **Add inline policy**:
-    - In the "Permissions" section, locate "Inline policy"
-    - Click "Add inline policy"
-    - Switch to JSON editor and paste (_you must remove the comments_):
-    ```json
-    {
-      "Version": "2012-10-17",
-      "Statement": [
-        {
-          "Effect": "Allow",
-          "Action": [
-            "ec2:*",             // For managing EC2 instances
-            "elasticloadbalancing:*",  // For potential load balancing
-            "iam:CreateServiceLinkedRole",  // For EC2 service roles
-            "iam:PassRole",      // For assigning roles to EC2
-            "s3:*"              // For OpenTofu state storage
-          ],
-          "Resource": "*"
-        }
-      ]
+```bash
+aws ec2 describe-subnets --query 'Subnets[?DefaultForAz==`true`].[SubnetId,AvailabilityZone]' --output table --profile <sso-profile> --region <region>
+```
+
+### How Docker Containers Get onto EC2
+
+**There are two ways the PyTorch container can end up on your EC2 instance:**
+
+#### **Option 1: Automatic Pre-pull (via User Data) ← THIS PROJECT USES THIS**
+
+- When the EC2 instance starts up, the User Data script automatically runs
+- This script installs Docker and pulls the public PyTorch image from Docker Hub
+- Command: `docker pull pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime`
+- The container image is downloaded and cached on the instance
+- When you SSH in later, the image is already available locally
+- **Advantage**: Container is ready to run immediately when you connect
+
+#### **Option 2: Manual Pull (after SSH) ← Alternative approach**
+
+- SSH into the instance after it's created
+- Manually run `docker pull pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime`
+- This downloads the image from Docker Hub to the instance
+- Takes a few minutes depending on image size and network speed
+- **Use this if**: User Data fails or you want different images
+
+**Why we use public images:**
+
+- No need to build custom images or push to registries
+- PyTorch official images are maintained and optimized
+- Simply reference them by name: `pytorch/pytorch:tag`
+- Docker automatically downloads from Docker Hub when needed
+
+**If you want to use your custom container:**
+
+1. Build locally: `docker build -t my-pytorch-app .`
+2. Push to registry: `docker push your-registry/my-pytorch-app`
+3. Pull on EC2: `docker pull your-registry/my-pytorch-app`
+
+### Step 3: Deploy
+
+```bash
+cd tofu/
+tofu init
+tofu plan -out=tfplan
+tofu apply tfplan
+```
+
+### Step 4: Connect and Run
+
+```bash
+# SSH into instance
+ssh -i <key-name>.pem ec2-user@<instance-public-ip>
+# you may get a warning due to connecting for the first time, go ahead and enter "yes"
+
+# Run your PyTorch code
+docker run --rm -v /tmp:/workspace \
+  pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime \
+  python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+```
+
+**Success!** If this command successfully prints the PyTorch version then we are done! We provision a single EC2 instance, pre-built PyTorch image, minimal AWS services.
+
+## If You Want GPU (Optional)
+
+- Change instance type to `g4dn.xlarge`
+- Use Deep Learning AMI: `ami-0c94855ba95b798c7`
+- Add `--gpus all` to docker run command
+
+## Cleanup/Shutdown
+
+```bash
+# Exit SSH session
+exit
+# or press Ctrl+D
+```
+
+When you're done experimenting, clean up to avoid ongoing AWS charges:
+
+```bash
+# Destroy all resources
+tofu destroy
+
+# Confirm by typing 'yes' when prompted
+```
+
+This removes:
+
+- EC2 instance
+- Security group
+- All associated resources
+
+**Manual cleanup (if needed):**
+
+- Delete the key pair from AWS Console (EC2 → Key Pairs)
+- Check for any orphaned resources in your AWS account
+
+## Local Development
+
+For local development while iterating:
+
+### VSCode Integration
+
+```json
+// .devcontainer/devcontainer.json
+{
+  "image": "pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime",
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
     }
-    ```
-    This permission set provides:
-    - Full EC2 management for PyTorch containers
-    - S3 access for OpenTofu state files
-    - Minimum IAM permissions for EC2 operation
-    - Load balancing capabilities if needed
-5. **Configure the permission set**:
-- Name: `EC2-OpenTofu-Access`
-- Description: "Permissions for EC2 management and OpenTofu infrastructure deployment"
-6. **Complete the creation** and proceed to Step 4 for assignment
-
-#### Step 4: Assign User to Account
-
-1. **Go to "AWS accounts"** in the left sidebar
-2. **Select your AWS account**
-3. **Click "Assign users or groups"**
-4. **Select your user** and the **permission set** you created
-5. **Finish the assignment**
-
-#### Step 5: Get Your SSO Information
-
-In Identity Center, find:
-- **AWS access portal URL** (something like `https://d-xxxxxxxxxx.awsapps.com/start`)
-- **SSO region** (where Identity Center is enabled)
-
-#### Step 6: Configure AWS CLI
-
-Now run:
-```bash
-aws configure sso
-```
-
-You'll be prompted for:
-- **SSO session name**: Pick any name (like "personal" or "main")
-- **SSO start URL**: Use the access portal URL from step 5
-- **SSO region**: The region where Identity Center is set up
-- **SSO registration scopes**: Enter `sso:account:access` (this is the default and minimum required scope)
-- **Default client region**: Your preferred AWS region for resources
-- **Default output format**: `json` (recommended)
-
-The CLI will open a browser for you to authenticate.
-
-#### Step 7: Test It
-
-```bash
-aws sso login --profile <sso profile>
-```
-
-Even if I granted STS permissions in the json above, I was not able to get the following to work even after successful SSO CLI login
-```bash
-aws sts get-caller-identity --profile <sso profile>
-```
-
-- Create or use existing Access Key ID and Secret Access Key
-
-### **SSH Credentials**
-
-Now that AWS authentication is configured, we need to prepare the SSH credentials that will allow us to securely connect to EC2 instances we'll create later. These steps create and secure the SSH key pair that OpenTofu will use when provisioning EC2 instances.
-
-#### **Generate SSH Key Pair**
-
-This creates an AWS-managed SSH key pair and downloads the private key file locally. You'll need this to SSH into any EC2 instances created by OpenTofu.
-```bash
-aws ec2 create-key-pair --key-name pytorch-key --query 'KeyMaterial' --output text > pytorch-key.pem
-```
-
-#### **Set Key Permissions** (Windows)
-
-This secures the private key file with proper permissions - only your user account can read it. This is required for SSH clients to accept the key.
-```powershell
-icacls pytorch-key.pem /inheritance:r
-icacls pytorch-key.pem /grant:r "%USERNAME%":"(R)"
-```
-
-## OpenTofu Infrastructure-as-Code
-
-OpenTofu roadmap to get an EC2 instance running:
-
-### Phase 1: Local Setup
-
-1. **Install OpenTofu** on your Windows machine
-[Guide](https://opentofu.org/docs/intro/install/windows/). Not sure if adding it to PATH helped or not
-
-```powershell
-winget install --exact --id=OpenTofu.Tofu
-```
-
-restart the terminal, then it should run in bash and powershell.
-
-```bash
-tofu -version
-```
-
-2. **Create Provider Configuration**
-Create a new file `provider.tf`:
-```hcl
-provider "aws" {
-  region = "us-east-1"  # or your preferred region
+  }
 }
 ```
 
-### Phase 2: Infrastructure Definition
+### Dependencies (Minimal Set)
 
-3. **Create main.tf** - define EC2 instance, security group, key pair
-4. **Create variables.tf** - parameterize instance type, region, etc.
-5. **Create outputs.tf** - export instance IP, connection details
-6. **Create terraform.tfvars** - set your specific values
+Already included in PyTorch image:
 
-### Phase 3: AWS Prerequisites
+- PyTorch + torchvision
+- numpy
+- Basic Python ML stack
 
-7. **Generate SSH key pair** for connecting to instance
-8. **Verify AWS credentials** have EC2 permissions
-9. **Choose AWS region** and availability zone
+Add only if needed:
 
-### Phase 4: Deployment
-
-10. **Initialize OpenTofu** (`tofu init`)
-11. **Plan deployment** (`tofu plan`) - preview what will be created
-12. **Apply configuration** (`tofu apply`) - create actual resources
-13. **Test SSH connection** to your new instance
-
-### Phase 5: Setup Development Environment
-
-14. **SSH into instance** and install Docker
-15. **Clone your PyTorch repo** on the instance
-16. **Configure VSCode SSH** to connect to the instance
-17. **Test your container** runs on the cloud instance
-
-## VSCode Integration
-
-**Dev Containers extension**:
-
-- `.devcontainer/devcontainer.json` configures the remote connection
-- VSCode attaches to running container
-- Full IntelliSense, debugging, terminal access inside container
-- Extensions (Python, PyTorch snippets) installed in container
-
-## Dependencies (Minimal Set)
-
-**CPU-optimized libraries**:
-
-- PyTorch CPU version + torchvision
-- numpy (with optimized BLAS)
-- matplotlib (basics)
-- tqdm (progress bars)
-- tensorboard (simple logging)
-
-**No Jupyter, no GPU libraries, no heavyweight frameworks initially**
-
-## Development Workflow
-
-1. **Build container** with all dependencies pre-installed
-2. **Start container** (standard Docker, no GPU runtime needed)
-3. **VSCode connects** via Dev Containers extension
-4. **Code directly** in container environment
-5. **Run training** with simple `python scripts/train.py`
-
-## CPU Optimization
-
-**Docker Configuration**:
-
-- Standard Docker Desktop on Windows
-- CPU resource allocation (cores/memory)
-- No special runtime requirements
-- Faster startup than GPU containers
-
-## Minimal Neural Network
-
-**Simple CNN example**:
-
-- Basic PyTorch model (lightweight for CPU)
-- MNIST dataset (smaller, faster on CPU)
-- Reduced batch sizes for CPU efficiency
-- CPU utilization monitoring
-- Threading optimization for Windows containers
-
-## Windows-Specific Considerations
-
-**Docker Desktop**:
-
-- WSL2 backend recommended
-- Memory allocation for container
-- File system performance (avoid bind mounts for dependencies)
-- Port forwarding for any web interfaces
-
-This approach gives you:
-
-- **No GPU dependencies** (works on any Windows machine)
-- **Fast container startup** (no CUDA runtime)
-- **Full VSCode experience** with remote development
-- **CPU-optimized PyTorch** for reasonable performance
-- **Simple setup** on Windows Docker Desktop
-- **Reproducible environment** across any CPU-based machine
-
-The key advantage is simplicity - standard Docker setup with no special hardware requirements, while still maintaining professional development practices.
+```bash
+pip install matplotlib tqdm tensorboard
+```
