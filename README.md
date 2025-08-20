@@ -95,7 +95,7 @@ docker run --rm -v /tmp:/workspace \
   python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
 ```
 
-**That's it.** Single EC2 instance, pre-built PyTorch image, minimal AWS services.
+**Success!** If this command successfully prints the PyTorch version then we are done! We provision a single EC2 instance, pre-built PyTorch image, minimal AWS services.
 
 ## If You Want GPU (Optional)
 
