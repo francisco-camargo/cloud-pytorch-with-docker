@@ -86,7 +86,8 @@ tofu apply tfplan
 
 ```bash
 # SSH into instance
-ssh -i <key-name>.pem ec2-user@<instance-ip>
+ssh -i <key-name>.pem ec2-user@<instance-public-ip>
+# you may get a warning due to connecting for the first time, go ahead and enter "yes"
 
 # Run your PyTorch code
 docker run --rm -v /tmp:/workspace \
