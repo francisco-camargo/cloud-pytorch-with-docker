@@ -1,5 +1,7 @@
 # Cloud PyTorch with Docker
 
+[Guide](https://github.com/francisco-camargo/opentofu-aws-hello-world) to getting started with AWS and OpenTofu to launch an EC2 instance.
+
 ## Minimal EC2 PyTorch Setup (Proof of Concept)
 
 **Goal**: Launch a single EC2 instance, run a PyTorch container, execute `train_mnist.py`. Nothing else.
