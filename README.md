@@ -31,6 +31,14 @@ Creates the minimal infrastructure needed:
 - **User Data Script**: Runs on instance startup to install Docker, start the service, and pre-pull the PyTorch container image
 - **Output**: Displays the instance's public IP address after creation
 
+**`subnet_id`**
+
+To get your subnet ID run
+
+```bash
+aws ec2 describe-subnets --query 'Subnets[?DefaultForAz==`true`].[SubnetId,AvailabilityZone]' --output table --profile <sso-profile> --region <region>
+```
+
 ### How Docker Containers Get onto EC2
 
 **There are two ways the PyTorch container can end up on your EC2 instance:**
@@ -68,9 +76,10 @@ Creates the minimal infrastructure needed:
 ### Step 3: Deploy
 
 ```bash
-cd terraform/
+cd tofu/
 tofu init
-tofu apply
+tofu plan -out=tfplan
+tofu apply tfplan
 ```
 
 ### Step 4: Connect and Run
