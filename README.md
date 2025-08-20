@@ -77,7 +77,7 @@ tofu apply
 
 ```bash
 # SSH into instance
-ssh -i pytorch-key.pem ec2-user@<instance-ip>
+ssh -i <key-name>.pem ec2-user@<instance-ip>
 
 # Run your PyTorch code
 docker run --rm -v /tmp:/workspace \
@@ -92,6 +92,28 @@ docker run --rm -v /tmp:/workspace \
 - Change instance type to `g4dn.xlarge`
 - Use Deep Learning AMI: `ami-0c94855ba95b798c7`
 - Add `--gpus all` to docker run command
+
+## Cleanup/Shutdown
+
+When you're done experimenting, clean up to avoid ongoing AWS charges:
+
+```bash
+# Destroy all resources
+tofu destroy
+
+# Confirm by typing 'yes' when prompted
+```
+
+This removes:
+
+- EC2 instance
+- Security group
+- All associated resources
+
+**Manual cleanup (if needed):**
+
+- Delete the key pair from AWS Console (EC2 → Key Pairs)
+- Check for any orphaned resources in your AWS account
 
 ## Local Development
 
