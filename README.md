@@ -105,6 +105,12 @@ docker run --rm -v /tmp:/workspace \
 
 ## Cleanup/Shutdown
 
+```bash
+# Exit SSH session
+exit
+# or press Ctrl+D
+```
+
 When you're done experimenting, clean up to avoid ongoing AWS charges:
 
 ```bash
