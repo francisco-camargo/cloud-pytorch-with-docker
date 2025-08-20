@@ -11,6 +11,13 @@ resource "aws_instance" "pytorch" {
   vpc_security_group_ids = [aws_security_group.pytorch.id]
   subnet_id              = var.subnet_id
 
+  # Increase root volume size for PyTorch image
+  root_block_device {
+    volume_type = "gp3"
+    volume_size = 20  # GB - increased from default 8GB
+    encrypted   = true
+  }
+
   # User data script - runs on instance startup to install Docker and pull PyTorch image
   user_data = <<-EOF
     #!/bin/bash
