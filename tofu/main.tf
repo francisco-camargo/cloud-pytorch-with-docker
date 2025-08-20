@@ -22,10 +22,17 @@ resource "aws_instance" "pytorch" {
   user_data = <<-EOF
     #!/bin/bash
     yum update -y
-    yum install -y docker
+    yum install -y docker git
     systemctl start docker
     systemctl enable docker
     usermod -a -G docker ec2-user
+
+    # Clone your repository
+    cd /home/ec2-user
+    git clone https://github.com/francisco-camargo/cloud-pytorch-with-docker.git
+    chown -R ec2-user:ec2-user cloud-pytorch-with-docker
+
+    # Pull PyTorch image
     docker pull ${var.pytorch_image}
   EOF
 
