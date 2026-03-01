@@ -6,12 +6,16 @@
 
 **Goal**: Launch a single EC2 instance, run a PyTorch container, execute `train_mnist.py`. Nothing else.
 
-### Step 1: Build Container Locally
+### Step 1: Test Container Locally (Optional)
 
 ```bash
-docker build -t pytorch-app ./docker
-docker run --rm pytorch-app python train_mnist.py  # Test locally first
+# Optional: Test your container locally before deploying
+docker build -t pytorch-app:latest ./docker
+docker run --rm pytorch-app:latest python sanity_check.py
+docker run --rm pytorch-app:latest python train_mnist.py
 ```
+
+**Note**: The container will be built automatically on EC2, so this step is optional.
 
 ### Step 2: Create OpenTofu Configuration
 
@@ -89,13 +93,38 @@ tofu apply tfplan
 ssh -i <key-name>.pem ec2-user@<instance-public-ip>
 # you may get a warning due to connecting for the first time, go ahead and enter "yes"
 
-# Run your PyTorch code
-docker run --rm -v /tmp:/workspace \
-  pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime \
-  python -c "import torch; print(f'PyTorch version: {torch.__version__}')"
+# Run your custom PyTorch container (built automatically on EC2)
+docker run --rm pytorch-app:latest python sanity_check.py
+docker run --rm pytorch-app:latest python train_mnist.py
+
+# Or run interactively to explore
+docker run -it pytorch-app:latest bash
 ```
 
-**Success!** If this command successfully prints the PyTorch version then we are done! We provision a single EC2 instance, pre-built PyTorch image, minimal AWS services.
+docker run --rm -v /home/ec2-user/cloud-pytorch-with-docker:/workspace \
+```
+
+**Success!** Your custom PyTorch container with scripts is now running on EC2!
+
+## Build-on-EC2 Approach
+
+This setup automatically builds your custom Docker image on the EC2 instance:
+
+### **What happens during deployment:**
+1. **EC2 launches** with Docker installed
+2. **Git clones** your repository from GitHub
+3. **Docker builds** your custom image using `./docker/Dockerfile`
+4. **Ready to run** your PyTorch scripts
+
+### **Benefits:**
+- ✅ **Simple setup** - No DockerHub account needed
+- ✅ **Self-contained** - Everything built on EC2
+- ✅ **Always fresh** - Latest code from your repo
+- ✅ **No external dependencies** - No registry required
+
+### **Trade-offs:**
+- ⚠️ **Slower startup** - Build time adds ~5-10 minutes to deployment
+- ⚠️ **EC2 resources** - Uses CPU/memory for building
 
 ## If You Want GPU (Optional)
 

@@ -18,7 +18,7 @@ resource "aws_instance" "pytorch" {
     encrypted   = true
   }
 
-  # User data script - runs on instance startup to install Docker and pull PyTorch image
+  # User data script - installs Docker, clones repo, and builds custom PyTorch image
   user_data = <<-EOF
     #!/bin/bash
     yum update -y
@@ -32,8 +32,9 @@ resource "aws_instance" "pytorch" {
     git clone https://github.com/francisco-camargo/cloud-pytorch-with-docker.git
     chown -R ec2-user:ec2-user cloud-pytorch-with-docker
 
-    # Pull PyTorch image
-    docker pull ${var.pytorch_image}
+    # Build your custom PyTorch image
+    cd cloud-pytorch-with-docker
+    docker build -t pytorch-app:latest ./docker
   EOF
 
   tags = {

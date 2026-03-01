@@ -44,9 +44,3 @@ variable "subnet_id" {
   description = "Subnet ID for the EC2 instance"
   type        = string
 }
-
-variable "pytorch_image" {
-  description = "PyTorch Docker image to pull on EC2 instance startup"
-  type        = string
-  default     = "pytorch/pytorch:2.1.2-cuda12.1-cudnn8-runtime"
-}
